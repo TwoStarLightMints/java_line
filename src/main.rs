@@ -126,6 +126,23 @@ fn add_class(class_file_name: String) -> Result<(), NotJavaLineProject> {
     }
 }
 
+fn new_package(package_name: String) -> Result<(), std::io::Error> {
+    is_java_line_project()?;
+    let new_pack = fs::DirBuilder::new();
+
+    match new_pack.create(&package_name) {
+        Ok(_) => (),
+        Err(_) => println!("Package already exists"),
+    }
+
+    let mut pack_decl = fs::File::create(package_name.clone() + "/pack_def.toml")?;
+
+    let pack_decl_content = vec![String::from("[package]"), format!("name={}", package_name)];
+
+    pack_decl.write(pack_decl_content.join("\n").as_bytes())?;
+    Ok(())
+}
+
 fn main() {
     // let args: Vec<String> = env::args().collect();
 
