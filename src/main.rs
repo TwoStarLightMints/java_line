@@ -1,4 +1,11 @@
-use std::{env, fs, io::Write, path::PathBuf};
+use std::{
+    env, fs,
+    io::{Read, Write},
+    path::PathBuf,
+};
+
+use serde::Deserialize;
+use toml;
 
 #[derive(Debug, Clone)]
 struct NotJavaLineProject;
@@ -7,6 +14,11 @@ impl std::fmt::Display for NotJavaLineProject {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Not inside a valid java_line project")
     }
+}
+
+#[derive(Deserialize, Debug)]
+struct JavaLineConfig {
+    name: String,
 }
 
 fn init() {
@@ -87,60 +99,147 @@ fn is_java_line_root_dir() -> bool {
     }
 }
 
-fn create_class(class_file_name: String) {
+fn create_class(class_file_name: String, parent_dir: Option<String>, package_info: Option<String>) {
     //! Creates the Java file for a new class with name class_file_name
+    //! If provided, creates the class within the given parent directory in parent_dir
 
-    // The below solution to capitalizing the first character of class_file_name found on github
-    // https://stackoverflow.com/questions/38406793/why-is-capitalizing-the-first-letter-of-a-string-so-convoluted-in-rust
-    let mut c = class_file_name.chars();
+    match parent_dir {
+        Some(dir) => {
+            let mut c = class_file_name.chars();
 
-    let class_name = match c.next() {
-        None => String::new(),
-        Some(l) => l.to_uppercase().collect::<String>() + c.as_str(),
-    };
+            let class_name = match c.next() {
+                None => String::new(),
+                Some(l) => l.to_uppercase().collect::<String>() + c.as_str(),
+            };
 
-    let mut new_class = fs::File::create(format!("{class_name}.java")).unwrap();
+            let mut new_class = fs::File::create(format!("{dir}/{class_name}.java")).unwrap();
 
-    let file_content = [
-        &format!("class {class_name} {{"),
-        "\n",
-        "\tpublic static void main(String[] args) {",
-        "\n",
-        "\t}",
-        "\n",
-        "}",
-    ];
+            match package_info {
+                Some(info) => {
+                    let file_content = [
+                        &format!("import {info};"),
+                        "\n",
+                        &format!("class {class_name} {{"),
+                        "\n",
+                        "\tpublic static void main(String[] args) {",
+                        "\n",
+                        "\t}",
+                        "\n",
+                        "}",
+                    ];
 
-    new_class
-        .write_all(file_content.join("\n").as_bytes())
-        .unwrap();
+                    new_class
+                        .write_all(file_content.join("\n").as_bytes())
+                        .unwrap();
+                }
+                None => {
+                    let file_content = [
+                        &format!("class {class_name} {{"),
+                        "\n",
+                        "\tpublic static void main(String[] args) {",
+                        "\n",
+                        "\t}",
+                        "\n",
+                        "}",
+                    ];
+
+                    new_class
+                        .write_all(file_content.join("\n").as_bytes())
+                        .unwrap();
+                }
+            }
+        }
+        None => {
+            // The below solution to capitalizing the first character of class_file_name found on github
+            // https://stackoverflow.com/questions/38406793/why-is-capitalizing-the-first-letter-of-a-string-so-convoluted-in-rust
+            let mut c = class_file_name.chars();
+
+            let class_name = match c.next() {
+                None => String::new(),
+                Some(l) => l.to_uppercase().collect::<String>() + c.as_str(),
+            };
+
+            let mut new_class = fs::File::create(format!("{class_name}.java")).unwrap();
+
+            let file_content = [
+                &format!("class {class_name} {{"),
+                "\n",
+                "\tpublic static void main(String[] args) {",
+                "\n",
+                "\t}",
+                "\n",
+                "}",
+            ];
+
+            new_class
+                .write_all(file_content.join("\n").as_bytes())
+                .unwrap();
+        }
+    }
 }
 
-fn add_class(class_file_name: String) -> Result<(), NotJavaLineProject> {
+// java_line add class parent_dir class_name
+// java_line add class class_name
+fn add_class(
+    class_file_name: String,
+    parent_dir: Option<String>,
+) -> Result<(), NotJavaLineProject> {
     //! Creates a new Java class if the user is currently inside of a java_line project
     if is_java_line_project() {
-        create_class(class_file_name);
+        match parent_dir {
+            Some(parent) => {
+                let package_info = get_package_info(&parent);
+
+                if package_info.is_empty() {
+                    create_class(class_file_name, Some(parent), None)
+                } else {
+                    create_class(class_file_name, Some(parent), Some(package_info));
+                }
+            }
+            None => create_class(class_file_name, None, None),
+        }
         Ok(())
     } else {
         Err(NotJavaLineProject)
     }
 }
 
-fn new_package(package_name: String) -> Result<(), std::io::Error> {
-    is_java_line_project()?;
-    let new_pack = fs::DirBuilder::new();
+fn new_package(package_name: String) {
+    if is_java_line_project() {
+        let new_pack = fs::DirBuilder::new();
 
-    match new_pack.create(&package_name) {
-        Ok(_) => (),
-        Err(_) => println!("Package already exists"),
+        match new_pack.create(&package_name) {
+            Ok(_) => (),
+            Err(_) => {
+                println!("Package already exists");
+                return;
+            }
+        }
+
+        let mut pack_decl = fs::File::create(package_name.clone() + "/pack_def.toml").unwrap();
+
+        let pack_decl_content = format!("name=\"{}\"", package_name);
+
+        pack_decl.write(pack_decl_content.as_bytes()).unwrap();
+    } else {
+        println!("You are not in a java_line project");
     }
+}
 
-    let mut pack_decl = fs::File::create(package_name.clone() + "/pack_def.toml")?;
+fn get_package_info(target_dir: &String) -> String {
+    // target_dir will be in form of path/to/dest, there should NOT be a / after dest
+    let mut pack_def = match fs::File::open(format!("{target_dir}/pack_def.toml")) {
+        Ok(tf) => tf,
+        Err(_) => return "".to_string(),
+    };
 
-    let pack_decl_content = vec![String::from("[package]"), format!("name={}", package_name)];
+    let mut buf = String::new();
 
-    pack_decl.write(pack_decl_content.join("\n").as_bytes())?;
-    Ok(())
+    pack_def.read_to_string(&mut buf).unwrap();
+
+    let info: JavaLineConfig = toml::from_str(buf.as_str()).unwrap();
+
+    info.name
 }
 
 fn main() {
@@ -150,7 +249,7 @@ fn main() {
 
     // if args[1] == "init" {
     //     init();
-    // } else if args[1] == "new" {
+    // } else if args[1] == "add" {
     //     add_class(args[2].to_string()).unwrap();
     // }
     // // println!(
@@ -165,7 +264,9 @@ fn main() {
 
     // // add_class("Thing").unwrap();
 
-    if is_java_line_root_dir() {
-        println!("In root directory");
-    }
+    // new_package("stuff".to_string());
+
+    // add_class("Thing".to_string(), None).unwrap();
+
+    add_class("Thing".to_string(), Some(".".to_string())).unwrap();
 }
