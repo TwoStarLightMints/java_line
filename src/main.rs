@@ -99,7 +99,11 @@ fn is_java_line_root_dir() -> bool {
     }
 }
 
-fn create_class(class_file_name: String, parent_dir: Option<String>, package_info: Option<String>) {
+fn create_class(
+    class_file_name: &String,
+    parent_dir: Option<&String>,
+    package_info: Option<String>,
+) {
     //! Creates the Java file for a new class with name class_file_name
     //! If provided, creates the class within the given parent directory in parent_dir
 
@@ -181,10 +185,11 @@ fn create_class(class_file_name: String, parent_dir: Option<String>, package_inf
 // java_line add class parent_dir class_name
 // java_line add class class_name
 fn add_class(
-    class_file_name: String,
-    parent_dir: Option<String>,
+    class_file_name: &String,
+    parent_dir: Option<&String>,
 ) -> Result<(), NotJavaLineProject> {
     //! Creates a new Java class if the user is currently inside of a java_line project
+    //! This is a wrapper for create_class, and should be used instead of that class
     if is_java_line_project() {
         match parent_dir {
             Some(parent) => {
@@ -204,7 +209,7 @@ fn add_class(
     }
 }
 
-fn new_package(package_name: String) {
+fn new_package(package_name: &String) {
     if is_java_line_project() {
         let new_pack = fs::DirBuilder::new();
 
@@ -243,30 +248,28 @@ fn get_package_info(target_dir: &String) -> String {
 }
 
 fn main() {
-    // let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = env::args().collect();
 
-    // println!("{args:?}");
-
-    // if args[1] == "init" {
-    //     init();
-    // } else if args[1] == "add" {
-    //     add_class(args[2].to_string()).unwrap();
-    // }
-    // // println!(
-    // //     "Started at: {}",
-    // //     env::current_dir().unwrap().to_str().unwrap()
-    // // );
-
-    // // match find_root(None) {
-    // //     Some(dir) => println!("{}", dir.to_str().unwrap()),
-    // //     None => println!("Not found"),
-    // // }
-
-    // // add_class("Thing").unwrap();
-
-    // new_package("stuff".to_string());
-
-    // add_class("Thing".to_string(), None).unwrap();
-
-    add_class("Thing".to_string(), Some(".".to_string())).unwrap();
+    if args[1] == "init" {
+        // Initialize branch
+        init();
+    } else if args[1] == "add" {
+        // Add branch
+        // Class
+        if args[2] == "class" {
+            // Add a class
+            if args.len() > 4 {
+                // With source directory specified
+                add_class(&args[3], Some(&args[4])).unwrap();
+            } else {
+                // Without source directory specified
+                add_class(&args[3], None).unwrap();
+            }
+        }
+        // Package
+        if args[2] == "package" {
+            // Add a package
+            new_package(&args[3]);
+        }
+    }
 }
